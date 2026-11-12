@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  UdhaM notification small icon — white monochrome, 24dp canvas.
+  Android system composites the white paths against a coloured background;
+  alpha channel controls the shape. No colour values other than white.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!--
+      Stylised "U" lettermark built from two parallelogram-style chevron
+      strokes mirroring the UdhaM logo motif.
+
+      Top stroke — upper-left to upper-right, angled like the logo's top slash.
+    -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="
+          M3,4
+          L9,4
+          L9,14
+          Q9,18 12,18
+          Q15,18 15,14
+          L15,4
+          L21,4
+          L21,14
+          Q21,21 12,21
+          Q3,21 3,14
+          Z" />
+</vector>

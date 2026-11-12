@@ -1,0 +1,107 @@
+# UdhaM — App Features
+
+This file is the product-facing feature inventory for UdhaM. It lists capabilities intended to be available in the app, not implementation details, architecture decisions, or deferred ideas.
+
+## 1. Account and access
+
+- Sign in with Google.
+- Use the same account across supported devices.
+- View and manage basic profile information.
+- Sign out securely.
+
+## 2. Groups and members
+
+- Create and manage multiple expense-sharing groups.
+- Join groups through invitations.
+- View group members and group activity.
+- Add guest participants who do not yet have an UdhaM account.
+- Link a guest participant to their account through a controlled process when they join UdhaM.
+
+## 3. Expense management
+
+- Create, view, and edit expense records.
+- Record expenses with a description, amount, date, category, and optional notes.
+- Record an expected payer separately from the person who actually pays.
+- Create an expense even when it has not been paid yet.
+- Add one or more participants to an expense.
+- Split expenses equally or enter custom share amounts.
+- View each participant's exact share.
+- Track unpaid, partially paid, paid, and voided expense states.
+- View expenses in a date-based group ledger.
+
+## 4. Payments and allocations
+
+- Record actual payments made by group members.
+- Record the payer, amount, date, and optional payment reference or note.
+- Allocate one payment across multiple expenses.
+- Allocate multiple payments to a single expense.
+- Support partial payments and show the remaining amount due.
+- View which payments covered each expense.
+- Keep payments separate from the expenses they cover.
+
+## 5. Balances and settlements
+
+- View each member's balance within a group.
+- See how much each member has paid and how much they owe through their expense shares.
+- See who owes whom and understand the underlying amounts.
+- View suggested settlements separately from completed transfers.
+- Record actual settlements between members.
+- Keep settlement records separate from ordinary expenses and payments.
+
+## 6. Receipts and payment proof
+
+- Attach receipts or payment proof to an expense or payment.
+- View attachments from the relevant record.
+- See upload progress and whether an attachment is queued, uploading, uploaded, or failed.
+- Retry failed uploads.
+
+## 7. Smart Payment Detection
+
+- Offer an optional Smart Inbox for detected financial transactions.
+- On supported Android devices, detect eligible bank and UPI transaction SMS messages where platform permissions and distribution policies allow it.
+- Parse eligible messages on-device into transaction candidates, such as debit or credit direction, amount, date, counterparty, and transaction reference when available.
+- Let users review, correct, confirm, ignore, or identify duplicate candidates.
+- Convert a confirmed candidate into a personal transaction, group expense, payment, or settlement as appropriate.
+- Allow a confirmed payment to be allocated across one or more existing expenses.
+- Never create a shared expense, payment allocation, or settlement without user confirmation.
+- Keep raw SMS message content on the device; do not upload the user's SMS inbox or raw message bodies to UdhaM.
+- Provide controls to enable or disable detection and manage pending local candidates.
+
+**Platform availability:** Automatic general-inbox SMS detection is an Android-only capability and depends on device support, permission availability, and applicable app-store policy approval. On iOS, users can enter transactions manually or use explicitly supported user-initiated import options; UdhaM will not claim general SMS inbox access.
+
+## 8. Activity and history
+
+- View a chronological history of expenses, payments, allocations, settlements, and relevant record changes.
+- Filter activity by date, member, or transaction type.
+- Open a transaction to view its full details and related records.
+
+## 9. Offline access and synchronization
+
+- View previously available group and ledger data while offline.
+- Create and update supported records while offline.
+- Queue changes and attachments for synchronization.
+- Show pending, syncing, synchronized, and failed states.
+- Retry failed synchronization.
+- Synchronize group data across devices after sign-in.
+- Preserve queued financial changes rather than silently discarding them.
+
+## 10. Preferences and account settings
+
+- Manage profile details.
+- Configure available app preferences.
+- Control Smart Payment Detection where supported.
+- View synchronization status.
+- Manage notification and theme preferences as supported by the release.
+
+---
+
+## Product behavior guarantees
+
+- An expected payer is never treated as the actual payer unless a real payment is recorded.
+- An unpaid expense remains visible as unpaid.
+- A payment does not merge or replace the expenses it covers.
+- Expense shares must add up exactly to the expense total.
+- Payment allocations must be traceable to their payment and expense records.
+- Suggested settlements do not change balances until an actual settlement is recorded.
+- SMS-detected transactions do not enter the shared ledger until the user confirms them.
+- Financial amounts are handled without floating-point rounding errors.
