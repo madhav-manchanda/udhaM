@@ -562,6 +562,22 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Any row left in `inProgress` means a previous sync crashed or was killed
+  /// mid-push. Those rows are safe to retry because every push is an
+  /// idempotent upsert keyed by the mutation's entity ids.
+  Future<int> recoverInProgressMutations() async {
+    return (update(clientMutations)
+          ..where(
+            (t) => t.state.equals(MutationState.inProgress.dbValue),
+          ))
+        .write(
+      const ClientMutationsCompanion(
+        state: Value('pending'),
+        lastError: Value(null),
+      ),
+    );
+  }
+
   Future<void> markMutationSynced(String id) async {
     await (update(clientMutations)..where((t) => t.id.equals(id))).write(
       ClientMutationsCompanion(

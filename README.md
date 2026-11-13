@@ -4,13 +4,15 @@ UdhaM is a local-first shared expense ledger for trips, homes, couples and
 small teams. It keeps expenses, payments, allocations, balances and settlements
 as separate records so the accounting stays explainable.
 
-This repository currently ships a **fully functional local-only build**. Cloud
-accounts, Supabase, and automatic Android SMS inbox access are intentionally
-left for a later integration; the data model and interfaces are ready for them.
+The app is offline-first: every change is written to a local Drift/SQLite
+database and an outbox first, then synchronized to Supabase when credentials
+are configured and the device is online. Without Supabase credentials it runs
+as a fully functional local-only ledger.
 
 ## Current scope
 
-- Local profiles and a persisted device session. Google sign-in is deferred.
+- Local profiles with a persisted device session, plus optional Google sign-in
+  through Supabase Auth.
 - Groups, invite codes, guest participants, guest-to-profile linking, roles,
   archiving, ownership transfer and deletion.
 - Expenses with equal or custom splits, expected payer, categories, notes,
@@ -23,16 +25,17 @@ left for a later integration; the data model and interfaces are ready for them.
 - Deterministic settlement suggestions, recorded settlements and documented
   balance adjustments, all reversible.
 - Receipt attachments stored privately on-device with size/type validation,
-  SHA-256 checksums and retryable upload state.
+  SHA-256 checksums and retryable upload state. When cloud sync is enabled they
+  are uploaded to the private `attachments` Supabase Storage bucket.
 - Activity history for ledger changes.
 - Smart Inbox: on-device SMS parser, paste/manual ingestion, duplicate
   detection and a review flow that converts candidates into expenses, payments,
   settlements or personal transactions.
-- Durable local outbox (`client_mutations`) with a no-op `LocalOnlySyncAdapter`.
-  A Supabase adapter can implement `SyncAdapter` later without changing the
-  ledger code.
-- Temporary Material 3 UI covering every flow. The final visual design is
-  intentionally not applied yet.
+- Durable local outbox (`client_mutations`) with idempotent pushes, retries,
+  conflict states, crash recovery and a full paginated pull. The Supabase
+  adapter also subscribes to realtime changes.
+- Automatic Android SMS detection through a native `SMS_RECEIVED` receiver,
+  behind the user-facing permission prompt.
 
 ## Accounting rules
 
@@ -63,12 +66,12 @@ lib/
 - Data: Drift/SQLite. `AppDatabase` owns schema, indexes, audit and outbox
   helpers.
 - Domain: pure Dart engines for splits, allocations, balances and SMS parsing.
-- Sync boundary: `SyncAdapter` + `SyncCoordinator`. The shipped adapter is
-  local-only and acknowledges mutations.
-- Attachments: private app documents directory. With Supabase this becomes a
-  private storage path.
-- Auth boundary: `AuthRepository` with a local implementation and an unused
-  `RemoteAuthAdapter` interface.
+- Sync boundary: `SyncAdapter` + `SyncCoordinator`. `SupabaseSyncAdapter`
+  performs idempotent push, paginated pull and realtime reconciliation.
+- Attachments: private app documents directory, mirrored to private Supabase
+  Storage when cloud sync is configured.
+- Auth boundary: `AuthRepository` with a local implementation and a
+  Supabase-backed `RemoteAuthAdapter` for Google OAuth.
 
 ## Getting started
 
@@ -91,26 +94,39 @@ flutter test
 The integration tests use an in-memory SQLite database. On Linux they load the
 system `libsqlite3.so.0`.
 
+## Cloud sync setup
+
+1. Copy `.env.example` to `.env` and fill in `SUPABASE_URL`,
+   `SUPABASE_ANON_KEY`, `SUPABASE_REDIRECT_URL` and, if needed,
+   `SUPABASE_STORAGE_BUCKET`.
+2. Apply the migrations in `supabase/migrations/` in filename order with
+   `supabase db push`, or paste them into the Supabase SQL editor as the
+   project owner. `20261114_ledger_sync_hardening.sql` is idempotent.
+3. Enable the Google provider in Supabase Auth and allow the redirect URL from
+   `.env` in the Auth URL configuration.
+4. Run with `flutter run --dart-define-from-file=.env`.
+
+Without credentials, `SupabaseSyncAdapter` acknowledges mutations locally and
+never blocks the ledger. With credentials but no signed-in session, pushes stay
+in the outbox and are retried after sign-in.
+
 ## Platforms
 
-Android, iOS and Linux runners are generated. The Smart Inbox currently uses
-paste/manual ingestion and does not register a native Android SMS listener.
-That listener, permissions, and store-policy work are deferred.
+Android, iOS and Linux runners are generated. The native Android SMS receiver,
+runtime permissions and notification flow are implemented. Real-device SMS
+testing and store-policy approval are still required before release.
 
-## Supabase later
+## Release build
 
-This build does not read environment variables yet. `.env.example` records the
-intended configuration. To connect Supabase:
+```bash
+flutter build apk --debug
+flutter build apk --release
+```
 
-1. Implement a `RemoteAuthAdapter` and map remote user IDs to local profiles.
-2. Implement `SyncAdapter.push` with idempotent server RPCs keyed by
-   `ClientMutation.id`, and `pull` with a version cursor.
-3. Move attachments to private Supabase Storage using the existing attachment
-   rows and upload states.
-4. Add server-side RLS for groups, participants, expenses, payments,
-   allocations, settlements, adjustments and attachments.
-
-The local database remains the source of truth until that work is complete.
+The release build currently uses the debug signing config
+(`android/app/build.gradle.kts`). Replace it with a private upload key before
+publishing. The project targets `compileSdk = 36`; install Android SDK
+platform 36 and build-tools 36 when setting up a new machine.
 
 ## Documentation
 

@@ -338,7 +338,7 @@ class LocalAttachmentRepository implements AttachmentRepository {
               'checksum': checksum,
               'localPath': destination.path,
             },
-            entityIds: [attachmentId, targetId],
+            entityIds: [attachmentId],
             createdAt: now,
             retryCount: 0,
             state: MutationState.pending,

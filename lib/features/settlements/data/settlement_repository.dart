@@ -355,7 +355,7 @@ class LocalSettlementRepository implements SettlementRepository {
           id: mutationId,
           actorId: actorProfileId,
           groupId: adjustment.groupId,
-          mutationType: MutationType.createAdjustment,
+          mutationType: MutationType.reverseAdjustment,
           schemaVersion: 1,
           payload: {'adjustmentId': adjustmentId, 'reversed': true},
           entityIds: [adjustmentId],

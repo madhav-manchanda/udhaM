@@ -317,6 +317,7 @@ class LocalGroupRepository implements GroupRepository {
           'display_name': displayName,
           'participant_type': 'registered',
           'status': 'active',
+          'role': 'owner',
           'created_at': now.toIso8601String(),
           'updated_at': now.toIso8601String(),
         });
@@ -986,7 +987,7 @@ class LocalGroupRepository implements GroupRepository {
             'participantId': participantId,
             'groupId': groupId,
             'displayName': name,
-            'type': ParticipantType.guest.dbValue,
+            'participantType': ParticipantType.guest.dbValue,
             'actorParticipantId': actor.id,
           },
           entityIds: [participantId],
@@ -1206,6 +1207,7 @@ class LocalGroupRepository implements GroupRepository {
           payload: {
             'participantId': guestParticipantId,
             'userId': targetProfileId,
+            'participantType': ParticipantType.registered.dbValue,
             'actorParticipantId': actor.id,
           },
           entityIds: [guestParticipantId],

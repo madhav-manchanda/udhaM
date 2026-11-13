@@ -55,6 +55,7 @@ enum MutationType {
   createSettlement,
   reverseSettlement,
   createAdjustment,
+  reverseAdjustment,
   createAttachment,
   deleteAttachment,
   redeemInvite,

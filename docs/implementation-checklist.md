@@ -1,6 +1,6 @@
 # UdhaM implementation checklist
 
-Status of the local-only build. “Done” means implemented in code and covered by
+Status of the offline-first build. “Done” means implemented in code and covered by
 `flutter analyze` plus the automated tests unless noted.
 
 ## Foundation
@@ -17,8 +17,9 @@ Status of the local-only build. “Done” means implemented in code and covered
 - [x] Local profiles with persisted session.
 - [x] Profile editing and sign-out.
 - [x] `RemoteAuthAdapter` boundary for future Google/Supabase auth.
-- [ ] Real Google sign-in.
-- [ ] Cross-device account linking.
+- [x] Google sign-in through Supabase Auth (requires configured credentials).
+- [x] Remote user IDs mapped to local profiles.
+- [ ] Cross-device account linking verification on two real devices.
 
 ## Groups and members
 
@@ -67,7 +68,7 @@ Status of the local-only build. “Done” means implemented in code and covered
 - [x] Retry failed uploads and delete attachments.
 - [x] Attachment UI on detail screens.
 - [ ] Thumbnail previews / in-app PDF viewer.
-- [ ] Supabase Storage upload.
+- [x] Supabase Storage upload/download with retry state.
 
 ## Smart Inbox
 
@@ -79,7 +80,7 @@ Status of the local-only build. “Done” means implemented in code and covered
       delete.
 - [x] Convert candidates into records and link the result.
 - [x] Enable/disable setting and inbox cleanup.
-- [ ] Native Android SMS receiver and permissions.
+- [x] Native Android SMS receiver, runtime permissions and notification flow.
 - [ ] Platform/store-policy approval for automatic inbox access.
 - [ ] iOS import extensions.
 
@@ -90,8 +91,11 @@ Status of the local-only build. “Done” means implemented in code and covered
 - [x] Retry, conflict and offline handling.
 - [x] Local-only adapter and coordinator.
 - [x] Pending count and sync status UI.
-- [ ] Supabase push/pull adapter.
-- [ ] Server-side version cursor and conflict resolution.
+- [x] Supabase push/pull adapter with idempotent upserts and paginated pull.
+- [x] Realtime subscription and debounced reconciliation.
+- [x] Crash recovery for mutations stranded `inProgress`.
+- [x] Server-side RLS migration, atomic group delete fix and realtime publication.
+- [ ] Live Supabase migration application and two-device conflict verification.
 
 ## Tests and docs
 
@@ -101,5 +105,6 @@ Status of the local-only build. “Done” means implemented in code and covered
 - [x] Widget tests: profile creation reaches the groups screen; creating a
       group and recording an expense through the UI.
 - [x] README, `.env.example`, architecture spec and this checklist.
-- [ ] Supabase RLS and server tests.
+- [x] Local unit/integration tests for the sync coordinator and outbox recovery.
+- [ ] Live Supabase RLS/server tests against a disposable project.
 - [ ] Native SMS tests on a physical Android device.

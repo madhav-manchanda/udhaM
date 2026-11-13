@@ -479,31 +479,23 @@ class _LiabilitiesSection extends ConsumerWidget {
           );
       if (me == null || balances == null) continue;
 
-      // Get people who owe me (negative net = I owe them)
-      for (final line in balances.report.lines.values) {
-        if (line.participantId == me.id) continue;
-        final otherNet = line.netMinor;
-        if (otherNet > 0) {
-          // This participant is owed — do I contribute to their surplus?
-          // Simplified: show my net if negative
-          final myNet = balances.lineFor(me.id)?.netMinor ?? 0;
-          if (myNet < 0) {
-            final other = participants.cast<dynamic>().firstWhere(
-                  (p) => p.id == line.participantId,
-                  orElse: () => null,
-                );
-            if (other != null) {
-              debts.add(_DebtRow(
-                name: other.displayName,
-                group: group.name,
-                amount: myNet.abs(),
-                currency: group.defaultCurrency,
-                groupId: group.id,
-              ));
-            }
-            break; // only add once per group
-          }
-        }
+      // A suggestion whose `from` is me is an exact amount I must pay to a
+      // specific participant. Only suggested transfers are shown so the cards
+      // always add up to the canonical net position.
+      for (final suggestion in balances.suggestions) {
+        if (suggestion.fromParticipantId != me.id) continue;
+        final other = participants.cast<dynamic>().firstWhere(
+              (p) => p.id == suggestion.toParticipantId,
+              orElse: () => null,
+            );
+        if (other == null) continue;
+        debts.add(_DebtRow(
+          name: other.displayName,
+          group: group.name,
+          amount: suggestion.amountMinor,
+          currency: group.defaultCurrency,
+          groupId: group.id,
+        ));
       }
     }
 
@@ -566,26 +558,23 @@ class _ReceivablesSection extends ConsumerWidget {
             orElse: () => null,
           );
       if (me == null || balances == null) continue;
-      final myNet = balances.lineFor(me.id)?.netMinor ?? 0;
-      if (myNet <= 0) continue;
 
-      for (final line in balances.report.lines.values) {
-        if (line.participantId == me.id) continue;
-        if (line.netMinor < 0) {
-          final other = participants.cast<dynamic>().firstWhere(
-                (p) => p.id == line.participantId,
-                orElse: () => null,
-              );
-          if (other != null) {
-            credits.add(_DebtRow(
-              name: other.displayName,
-              group: group.name,
-              amount: line.netMinor.abs(),
-              currency: group.defaultCurrency,
-              groupId: group.id,
-            ));
-          }
-        }
+      // A suggestion whose `to` is me is an exact amount a specific
+      // participant must pay me.
+      for (final suggestion in balances.suggestions) {
+        if (suggestion.toParticipantId != me.id) continue;
+        final other = participants.cast<dynamic>().firstWhere(
+              (p) => p.id == suggestion.fromParticipantId,
+              orElse: () => null,
+            );
+        if (other == null) continue;
+        credits.add(_DebtRow(
+          name: other.displayName,
+          group: group.name,
+          amount: suggestion.amountMinor,
+          currency: group.defaultCurrency,
+          groupId: group.id,
+        ));
       }
     }
 

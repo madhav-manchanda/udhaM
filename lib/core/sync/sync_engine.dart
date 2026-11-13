@@ -110,6 +110,8 @@ class SyncCoordinator {
         );
       }
 
+      await _db.recoverInProgressMutations();
+
       _emit(
         SyncReport(
           phase: SyncPhase.syncing,
@@ -120,33 +122,44 @@ class SyncCoordinator {
         ),
       );
 
-      final pending = await _db.pendingMutations(limit: 200);
+      // Failed rows stay in the pending query so an occasional retry can
+      // succeed, but track what this run already attempted so a permanently
+      // failing row cannot spin forever.
+      final attempted = <String>{};
       var pushed = 0;
       var failed = 0;
 
-      for (final mutation in pending) {
-        await _db.markMutationInProgress(mutation.id);
-        try {
-          await _adapter.push(mutation);
-          await _db.markMutationSynced(mutation.id);
-          pushed++;
-        } on ConflictError catch (error) {
-          await _db.markMutationConflict(mutation.id, error: error.message);
-          failed++;
-        } catch (error) {
-          if (mutation.retryCount + 1 >= maxRetries) {
-            await _db.markMutationConflict(
-              mutation.id,
-              error: describeError(error),
-            );
-          } else {
-            await _db.markMutationFailed(
-              mutation.id,
-              error: describeError(error),
-              retryCount: mutation.retryCount + 1,
-            );
+      while (true) {
+        final batch = await _db.pendingMutations(limit: 200);
+        final work =
+            batch.where((mutation) => !attempted.contains(mutation.id)).toList();
+        if (work.isEmpty) break;
+
+        for (final mutation in work) {
+          attempted.add(mutation.id);
+          await _db.markMutationInProgress(mutation.id);
+          try {
+            await _adapter.push(mutation);
+            await _db.markMutationSynced(mutation.id);
+            pushed++;
+          } on ConflictError catch (error) {
+            await _db.markMutationConflict(mutation.id, error: error.message);
+            failed++;
+          } catch (error) {
+            if (mutation.retryCount + 1 >= maxRetries) {
+              await _db.markMutationConflict(
+                mutation.id,
+                error: describeError(error),
+              );
+            } else {
+              await _db.markMutationFailed(
+                mutation.id,
+                error: describeError(error),
+                retryCount: mutation.retryCount + 1,
+              );
+            }
+            failed++;
           }
-          failed++;
         }
       }
 

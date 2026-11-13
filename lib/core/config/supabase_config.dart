@@ -50,6 +50,21 @@ class SupabaseConfig {
     return defaultRedirectUrl;
   }
 
+  /// Private Supabase Storage bucket used for receipts and payment proof.
+  ///
+  /// Keep this in sync with the storage bucket created by the SQL migrations.
+  static String get storageBucket {
+    const fromEnv = String.fromEnvironment('SUPABASE_STORAGE_BUCKET');
+    if (fromEnv.isNotEmpty) return fromEnv;
+
+    if (dotenv.isInitialized) {
+      final fromDotenv = dotenv.maybeGet('SUPABASE_STORAGE_BUCKET');
+      if (fromDotenv != null && fromDotenv.isNotEmpty) return fromDotenv;
+    }
+
+    return 'attachments';
+  }
+
   static bool get isConfigured {
     final u = url;
     final k = anonKey;
