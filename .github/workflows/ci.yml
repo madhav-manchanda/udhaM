@@ -2,80 +2,62 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  analyze-test-build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: read
-
     steps:
-      - name: Set up JDK 17
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-          cache: 'gradle'
+          cache: gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
           cache: true
 
-      - name: Install Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          api-level: 33
-          ndk: true
 
-      - name: Cache Flutter packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            **/.dart_tool/
-          key: flutter-packages-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            flutter-packages-${{ runner.os }}-
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
 
-      - run: flutter pub get
+      - name: Install Flutter dependencies
+        run: flutter pub get
 
-      - name: Run flutter analysis
+      - name: Analyze
         run: flutter analyze
 
-      - name: Run flutter test
+      - name: Run tests
         run: flutter test
 
-      - name: Build release APK (unsigned)
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_REDIRECT_URL: ${{ secrets.SUPABASE_REDIRECT_URL }}
-        run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/udham.keystore
-          else
-            keytool -keystore android/udham.keystore -alias androiddebugkey -importcert -noprompt -destkeystore android/udham.keystore -storepass android -keypass android <<EOF 2>/dev/null || true
-EOF
-          fi
-          flutter build apk --release \
-            --target-platform=android-arm64 \
-            --split-per-abi \
-            --dart-define "SUPABASE_URL=${SUPABASE_URL}" \
-            --dart-define "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" \
-            --dart-define "SUPABASE_REDIRECT_URL=${SUPABASE_REDIRECT_URL}"
+      # CI produces a debug APK only. Production signing and public releases
+      # are handled exclusively by release.yml after a version tag is pushed.
+      - name: Build debug APK
+        run: flutter build apk --debug
 
-      - name: Upload release APK artifact
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: udham-release-unsigned
-          path: build/app/outputs/flutter-apk/**/app-release.apk
+          name: udham-debug-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
