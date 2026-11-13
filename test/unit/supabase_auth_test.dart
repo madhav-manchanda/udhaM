@@ -54,6 +54,10 @@ class FakeRemoteAuthAdapter implements RemoteAuthAdapter {
     _authStateController.add(AuthState(event, session));
   }
 
+  void emitAuthError(Object error) {
+    _authStateController.addError(error);
+  }
+
   @override
   Future<bool> signInWithGoogle({String? redirectTo}) async {
     signedInWithGoogleCalled = true;
@@ -199,6 +203,25 @@ void main() {
         () => authRepo.signInWithGoogle(),
         throwsA(isA<AuthException>()),
       );
+
+      await authRepo.dispose();
+      fakeAdapter.dispose();
+    });
+
+    test('surfaces OAuth callback errors for the auth screen', () async {
+      final fakeAdapter = FakeRemoteAuthAdapter(currentUser: null);
+      final authRepo = LocalAuthRepository(db, prefs, remoteAuth: fakeAdapter);
+
+      fakeAdapter.emitAuthError(
+        const AuthException(
+          'OAuth access denied',
+          code: 'access_denied',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(authRepo.authError.value, contains('not allowed'));
+      expect(authRepo.authError.value, contains('test user'));
 
       await authRepo.dispose();
       fakeAdapter.dispose();

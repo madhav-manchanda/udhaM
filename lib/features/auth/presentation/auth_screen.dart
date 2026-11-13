@@ -17,6 +17,32 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    final repository = ref.read(authRepositoryProvider);
+    repository.authError.addListener(_handleAuthError);
+    final existingError = repository.authError.value;
+    if (existingError != null && existingError.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showError(context, existingError);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    ref.read(authRepositoryProvider).authError.removeListener(_handleAuthError);
+    super.dispose();
+  }
+
+  void _handleAuthError() {
+    final message = ref.read(authRepositoryProvider).authError.value;
+    if (message != null && message.isNotEmpty && mounted) {
+      showError(context, message);
+    }
+  }
+
   Future<void> _handleGoogleSignIn() async {
     if (_busy) return;
     setState(() => _busy = true);

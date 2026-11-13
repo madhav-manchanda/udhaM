@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/database/mappers.dart';
@@ -15,6 +17,9 @@ export 'supabase_auth_adapter.dart';
 /// Authentication boundary for UdhaM.
 abstract class AuthRepository {
   UserProfile? get currentProfile;
+
+  /// Last remote authentication failure, suitable for showing to the user.
+  ValueListenable<String?> get authError;
 
   Stream<UserProfile?> watchCurrentProfile();
 
@@ -63,18 +68,42 @@ class LocalAuthRepository implements AuthRepository {
   static const String _sessionKey = 'session_profile_id';
   UserProfile? _current;
 
+  @override
+  final ValueNotifier<String?> authError = ValueNotifier<String?>(null);
+
   void _initRemoteAuthListener() {
     final adapter = remoteAuth;
     if (adapter == null) return;
 
-    _remoteAuthSub = adapter.onAuthStateChange.listen((data) async {
-      final session = data.session;
-      if (session != null) {
-        await _syncRemoteUser(session.user);
-      } else {
-        await signOut(localOnly: true);
+    _remoteAuthSub = adapter.onAuthStateChange.listen(
+      (data) async {
+        final session = data.session;
+        if (session != null) {
+          authError.value = null;
+          await _syncRemoteUser(session.user);
+        } else {
+          await signOut(localOnly: true);
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        final message = _authErrorMessage(error);
+        debugPrint('LocalAuthRepository: remote auth error: $message');
+        debugPrintStack(stackTrace: stackTrace);
+        authError.value = message;
+      },
+    );
+  }
+
+  String _authErrorMessage(Object error) {
+    if (error is AuthException) {
+      if (error.code == 'access_denied') {
+        return 'Google sign-in was cancelled, or this Google account is not '
+            'allowed by the OAuth consent screen. Add it as a test user or '
+            'publish the OAuth app, then try again.';
       }
-    });
+      return error.message;
+    }
+    return error.toString();
   }
 
   @override
@@ -212,6 +241,7 @@ class LocalAuthRepository implements AuthRepository {
   }) async {
     // If Supabase remote auth adapter is provided, initiate Google OAuth
     if (remoteAuth != null) {
+      authError.value = null;
       await remoteAuth!.signInWithGoogle();
       final user = remoteAuth!.currentUser;
       if (user != null) {
@@ -325,6 +355,7 @@ class LocalAuthRepository implements AuthRepository {
   Future<void> dispose() async {
     await _remoteAuthSub?.cancel();
     await _currentController.close();
+    authError.dispose();
   }
 
   String? _normalizeEmail(String? email) {
