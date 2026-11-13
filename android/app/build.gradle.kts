@@ -4,6 +4,21 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Production releases opt in explicitly from the release workflow. Local debug
+// and development builds continue to use the normal debug signing configuration.
+val udhamProductionRelease = project.hasProperty("udhamProductionRelease")
+val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+val releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+
+if (udhamProductionRelease) {
+    require(!releaseKeystorePath.isNullOrBlank()) { "ANDROID_KEYSTORE_PATH is required for production releases." }
+    require(!releaseKeystorePassword.isNullOrBlank()) { "ANDROID_KEYSTORE_PASSWORD is required for production releases." }
+    require(!releaseKeyAlias.isNullOrBlank()) { "ANDROID_KEY_ALIAS is required for production releases." }
+    require(!releaseKeyPassword.isNullOrBlank()) { "ANDROID_KEY_PASSWORD is required for production releases." }
+}
+
 android {
     namespace = "com.udham.udham"
     compileSdk = 36
@@ -15,25 +30,33 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.udham.udham"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (udhamProductionRelease) {
+            create("production") {
+                storeFile = file(requireNotNull(releaseKeystorePath))
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // A tagged production release must use the dedicated signing key.
+            // Non-production local release builds retain debug signing for convenience.
+            signingConfig = if (udhamProductionRelease) {
+                signingConfigs.getByName("production")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
