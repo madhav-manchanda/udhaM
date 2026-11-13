@@ -1,114 +1,153 @@
-name: Release
+name: Android Release
 
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
+    name: Test, build and publish APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: read
-
     steps:
-      - name: Set up JDK 17
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-          cache: 'gradle'
+          cache: gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
           cache: true
 
-      - name: Install Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          api-level: 33
-          ndk: true
 
-      - name: Cache Flutter packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            **/.dart_tool/
-          key: flutter-packages-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            flutter-packages-${{ runner.os }}-
-
-      - run: flutter pub get
-
-      - name: Parse tag version and update local.properties
-        id: parse_version
+      - name: Install Android SDK components
         run: |
-          TAG=${{ github.ref_name }}
-          VERSION=${TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
-          VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
-          echo "version=$VERSION" >> $GITHUB_ENV
-          echo "version_name=$VERSION" >> $GITHUB_ENV
-          echo "version_code=$VERSION_CODE" >> $GITHUB_ENV
-          echo "major=$MAJOR" >> $GITHUB_ENV
-          echo "minor=$MINOR" >> $GITHUB_ENV
-          echo "patch=$PATCH" >> $GITHUB_ENV
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
 
-      - name: Apply version to local.properties
+      - name: Validate release tag
+        id: version
+        shell: bash
         run: |
-          cat > android/local.properties <<EOF
-flutter.sdk=/home/madhav/flutter
-sdk.dir=/home/madhav/Android/Sdk
-flutter.buildMode=release
-flutter.versionName=${{ env.version_name }}
-flutter.versionCode=${{ env.version_code }}
-EOF
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Tag must use semantic version format vMAJOR.MINOR.PATCH (for example v1.0.1)."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Decode and save Keystore
+      - name: Validate required GitHub secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_REDIRECT_URL: ${{ secrets.SUPABASE_REDIRECT_URL }}
+        shell: bash
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/udham.keystore
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_REDIRECT_URL; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required repository secret: $name"
+              exit 1
+            fi
+          done
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url = os.environ["SUPABASE_URL"]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or not parsed.netloc or not parsed.netloc.endswith(".supabase.co"):
+              raise SystemExit("SUPABASE_URL must be the HTTPS URL of the intended Supabase project.")
+          if os.environ["SUPABASE_REDIRECT_URL"] != "com.udham.udham://login-callback/":
+              raise SystemExit("SUPABASE_REDIRECT_URL does not match the Android manifest callback URI.")
+          PY
 
-      - name: Build release APK (signed)
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Decode and validate Android signing keystore
         env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/udham-release.jks"
+          chmod 600 "$RUNNER_TEMP/udham-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/udham-release.jks" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/udham-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed production APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_REDIRECT_URL: ${{ secrets.SUPABASE_REDIRECT_URL }}
+          ORG_GRADLE_PROJECT_udhamProductionRelease: 'true'
+        run: |
+          set -euo pipefail
           flutter build apk --release \
             --target-platform=android-arm64 \
-            --dart-define SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
-            --dart-define SUPABASE_REDIRECT_URL=${{ secrets.SUPABASE_REDIRECT_URL }}
+            --build-name="${{ steps.version.outputs.version }}" \
+            --build-number="$GITHUB_RUN_NUMBER" \
+            --dart-define="SUPABASE_URL=$SUPABASE_URL" \
+            --dart-define="SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" \
+            --dart-define="SUPABASE_REDIRECT_URL=$SUPABASE_REDIRECT_URL"
 
-      - name: Verify Supabase URL in APK
+      - name: Verify APK exists and is signed
         run: |
-          if strings build/app/outputs/flutter-apk/**/app-release.apk | grep -q "xpodixygnzziczrdwpyd.supabase.co"; then
-            echo "✅ Supabase URL found in APK"
-          else
-            echo "❌ Supabase URL missing from APK – failing workflow"
-            exit 1
-          fi
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          echo "Verified signed APK: $APK"
 
-      - name: Create GitHub Release
+      - name: Upload APK to workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: udham-${{ github.ref_name }}-android-arm64
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Release ${{ github.ref_name }}"
+          name: UdhaM ${{ github.ref_name }}
           generate_release_notes: true
-          fail_on_unfound_tag: false
-          files: |
-            build/app/outputs/flutter-apk/**/app-release.apk
+          fail_on_unmatched_files: true
+          files: build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Remove temporary keystore
-        run: rm -f android/udham.keystore
+      - name: Remove temporary signing keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/udham-release.jks"
