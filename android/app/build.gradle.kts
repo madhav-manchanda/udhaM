@@ -5,7 +5,7 @@ plugins {
 }
 
 // Production releases opt in explicitly from the release workflow. Local debug
-// and development builds continue to use the normal debug signing configuration.
+// and development builds continue to use the normal Android debug signing configuration.
 val udhamProductionRelease = project.hasProperty("udhamProductionRelease")
 val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 val releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -38,12 +38,8 @@ android {
     }
 
     signingConfigs {
-        create("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
+        // The Android Gradle Plugin already provides the standard "debug"
+        // signing config. Do not create it again; only add production signing.
         if (udhamProductionRelease) {
             create("production") {
                 storeFile = file(requireNotNull(releaseKeystorePath))
