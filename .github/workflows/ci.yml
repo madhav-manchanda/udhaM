@@ -33,12 +33,49 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK components
+        shell: bash
         run: |
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT" ]]; then
+            echo "::error::GitHub runner Android SDK was not found (ANDROID_SDK_ROOT/ANDROID_HOME)."
+            exit 1
+          fi
+
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [[ -z "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          fi
+          if [[ -z "$SDKMANAGER" || ! -x "$SDKMANAGER" ]]; then
+            echo "::error::Android sdkmanager was not found under $SDK_ROOT."
+            exit 1
+          fi
+
+          echo "Using Android SDK: $SDK_ROOT"
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          # GitHub-hosted Ubuntu runners include Android command-line tools.
+          # Do not invoke android-actions/setup-android here: its default legacy
+          # package request is 'tools', which no longer exists in Google's repo.
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          license_status=${PIPESTATUS[1]}
+          set -o pipefail
+          if [[ "$license_status" -ne 0 ]]; then
+            echo "::error::Android SDK license acceptance failed."
+            exit "$license_status"
+          fi
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.0.12077973"
+
+          test -d "$SDK_ROOT/platforms/android-36"
+          test -d "$SDK_ROOT/build-tools/36.0.0"
 
       - name: Install Flutter dependencies
         run: flutter pub get
