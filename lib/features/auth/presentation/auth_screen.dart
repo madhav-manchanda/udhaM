@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../app/providers/providers.dart';
 import '../../../shared/widgets/design_system.dart';
+import '../data/auth_repository.dart';
 import '../domain/user_profile.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -16,13 +17,14 @@ class AuthScreen extends ConsumerStatefulWidget {
 
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _busy = false;
+  late final AuthRepository _authRepository;
 
   @override
   void initState() {
     super.initState();
-    final repository = ref.read(authRepositoryProvider);
-    repository.authError.addListener(_handleAuthError);
-    final existingError = repository.authError.value;
+    _authRepository = ref.read(authRepositoryProvider);
+    _authRepository.authError.addListener(_handleAuthError);
+    final existingError = _authRepository.authError.value;
     if (existingError != null && existingError.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) showError(context, existingError);
@@ -32,16 +34,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   void dispose() {
-    try {
-      ref.read(authRepositoryProvider).authError.removeListener(_handleAuthError);
-    } catch (_) {
-      // Widget already disposed; ref may no longer be accessible.
-    }
+    _authRepository.authError.removeListener(_handleAuthError);
     super.dispose();
   }
 
   void _handleAuthError() {
-    final message = ref.read(authRepositoryProvider).authError.value;
+    final message = _authRepository.authError.value;
     if (message != null && message.isNotEmpty && mounted) {
       showError(context, message);
     }
