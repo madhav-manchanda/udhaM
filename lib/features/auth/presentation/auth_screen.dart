@@ -32,7 +32,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   void dispose() {
-    ref.read(authRepositoryProvider).authError.removeListener(_handleAuthError);
+    try {
+      ref.read(authRepositoryProvider).authError.removeListener(_handleAuthError);
+    } catch (_) {
+      // Widget already disposed; ref may no longer be accessible.
+    }
     super.dispose();
   }
 

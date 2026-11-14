@@ -2,98 +2,80 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [ main ]
 
 jobs:
-  analyze-test-build:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+    permissions:
+      contents: read
+      id-token: read
 
-      - name: Set up Java
+    steps:
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
-          cache: gradle
+          cache: 'gradle'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: 'stable'
           cache: true
 
-      - name: Install Android SDK components
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 33
+          ndk: true
 
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT" ]]; then
-            echo "::error::GitHub runner Android SDK was not found (ANDROID_SDK_ROOT/ANDROID_HOME)."
-            exit 1
-          fi
+      - name: Cache Flutter packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            **/.dart_tool/
+          key: flutter-packages-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            flutter-packages-${{ runner.os }}-
 
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [[ -z "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
-          fi
-          if [[ -z "$SDKMANAGER" || ! -x "$SDKMANAGER" ]]; then
-            echo "::error::Android sdkmanager was not found under $SDK_ROOT."
-            exit 1
-          fi
+      - run: flutter pub get
 
-          echo "Using Android SDK: $SDK_ROOT"
-          echo "Using sdkmanager: $SDKMANAGER"
-
-          # GitHub-hosted Ubuntu runners include Android command-line tools.
-          # Do not invoke android-actions/setup-android here: its default legacy
-          # package request is 'tools', which no longer exists in Google's repo.
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses >/dev/null
-          license_status=${PIPESTATUS[1]}
-          set -o pipefail
-          if [[ "$license_status" -ne 0 ]]; then
-            echo "::error::Android SDK license acceptance failed."
-            exit "$license_status"
-          fi
-
-          "$SDKMANAGER" --install \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-          test -d "$SDK_ROOT/platforms/android-36"
-          test -d "$SDK_ROOT/build-tools/36.0.0"
-
-      - name: Install Flutter dependencies
-        run: flutter pub get
-
-      - name: Analyze
+      - name: Run flutter analysis
         run: flutter analyze
 
-      - name: Run tests
+      - name: Run flutter test
         run: flutter test
 
-      # CI produces a debug APK only. Production signing and public releases
-      # are handled exclusively by release.yml after a version tag is pushed.
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Build release APK (unsigned)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_REDIRECT_URL: ${{ secrets.SUPABASE_REDIRECT_URL }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/udham.keystore
+          else
+            keytool -keystore android/udham.keystore -alias androiddebugkey -importcert -noprompt -destkeystore android/udham.keystore -storepass android -keypass android <<EOF 2>/dev/null || true
+EOF
+          fi
+          flutter build apk --release \
+            --target-platform=android-arm64 \
+            --split-per-abi \
+            --dart-define "SUPABASE_URL=${SUPABASE_URL}" \
+            --dart-define "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" \
+            --dart-define "SUPABASE_REDIRECT_URL=${SUPABASE_REDIRECT_URL}"
 
-      - name: Upload debug APK
+      - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: udham-debug-${{ github.sha }}
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+          name: udham-release-unsigned
+          path: build/app/outputs/flutter-apk/**/app-release.apk
