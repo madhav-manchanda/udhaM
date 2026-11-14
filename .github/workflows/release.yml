@@ -44,45 +44,21 @@ jobs:
 
       - run: flutter pub get
 
-      - name: Parse tag version and update local.properties
-        id: parse_version
-        run: |
-          TAG=${{ github.ref_name }}
-          VERSION=${TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
-          VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
-          echo "version=$VERSION" >> $GITHUB_ENV
-          echo "version_name=$VERSION" >> $GITHUB_ENV
-          echo "version_code=$VERSION_CODE" >> $GITHUB_ENV
-          echo "major=$MAJOR" >> $GITHUB_ENV
-          echo "minor=$MINOR" >> $GITHUB_ENV
-          echo "patch=$PATCH" >> $GITHUB_ENV
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-
-      - name: Apply version to local.properties
-        run: |
-          cat > android/local.properties <<EOF
-flutter.sdk=/home/madhav/flutter
-sdk.dir=/home/madhav/Android/Sdk
-flutter.buildMode=release
-flutter.versionName=${{ env.version_name }}
-flutter.versionCode=${{ env.version_code }}
-EOF
-
-      - name: Decode and save Keystore
+      - name: Decode and save Keystore to runner temp
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/udham.keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > $RUNNER_TEMP/udham.keystore
 
-      - name: Build release APK (signed)
+      - name: Set ANDROID_KEYSTORE_PATH for Gradle
+        run: echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/udham.keystore" >> $GITHUB_ENV
+
+      - name: Build release APK (signed, production)
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PATH: $ANDROID_KEYSTORE_PATH
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -94,7 +70,12 @@ EOF
             --dart-define "SUPABASE_URL=${SUPABASE_URL}" \
             --dart-define "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" \
             --dart-define "SUPABASE_REDIRECT_URL=${SUPABASE_REDIRECT_URL}" \
+            --define udhamProductionRelease=true \
             --target-platform=android-arm64
+
+      - name: Verify APK signature
+        run: |
+          apksigner verify --print-certs build/app/outputs/flutter-apk/**/app-release.apk
 
       - name: Verify Supabase URL in APK
         run: |
@@ -116,4 +97,4 @@ EOF
             build/app/outputs/flutter-apk/**/app-release.apk
 
       - name: Remove temporary keystore
-        run: rm -f android/udham.keystore
+        run: rm -f $RUNNER_TEMP/udham.keystore
